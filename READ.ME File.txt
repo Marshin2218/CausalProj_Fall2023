@@ -1,0 +1,14 @@
+###READ.ME: File
+
+Hello - This Folder contains all that you need to recreate my Fall 2023 Causal Inference Project on Yahoo Personals 2004-2005 data. 
+
+The original study and data was downloaded and can be found at the ICPSR website: https://www.icpsr.umich.edu/web/ICPSR/studies/36347 . I have included the zip file version that comes from the website (ICPSR_36347-V1.zip) and unzipped version of it (ICPSR_36347) it in this folder. The ICPSR_36347 folder contains the pdf codebook, the data in a rda file, and other documentation. However, those two files are the main ones that I used. 
+
+To replicate my analysis, save my cleaning file "OG_YH_cleaningv_NAImputev2.r", the original data document (36347-0001-Data.rda) and my "analysis" file into a folder that should act as the working directory of your choice. Open the analysis.rmd. n the first code chunk, set the working directory to the folder where the cleaning file is and original .rda file is. If they are in the same place, you should not need to run either of them in your R instance.  You should be just run the first chunk in the .rmd file to have the cleaned data ready to go. However, if you would like to perform your own analysis on, please take a look at the cleaned data file.
+
+My written up report of my analysis is also included in this folder. Thank you for your time and interest in my project. Please contact me at msherrod18@gmail.com if you have any questions.
+
+
+Best,
+Marlee Sherrod
+

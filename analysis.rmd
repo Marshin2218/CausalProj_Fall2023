@@ -1,0 +1,379 @@
+---
+title: "Project : Propensity Score on Yahoo Personals Data 2004-2005, M. Sherrod"
+output: pdf_document
+---
+
+
+## R Packages
+You will need to use an R package that you may not already have installed, arm. 
+
+
+```{r setup, include=FALSE, echo=F}
+setwd("~/R")
+source("OG_YH_cleaningv_NAImputev2.r", local = knitr::knit_global())
+#Marlee Sherrod
+
+library(arm)
+library(tidyverse)
+library(cobalt)
+library(MatchIt)
+library(sandwich)
+library(lmtest)
+library(Hmisc)
+library(MASS)
+
+
+```
+
+
+
+#### Load the data and choose confounders (5 points)
+
+```{r}
+# load data
+YHdatNA <- OG_YH_test
+colnames(YHdatNA)
+summary(YHdatNA$CGRAD)
+
+sum(YHdatNA$CGRAD == 1) #3462
+sum(YHdatNA$CGRAD == 0) #2408
+```
+
+
+```{r}
+# print out the names of all your confounders
+YHdatNA_NAMES <- YHdatNA %>% dplyr::select(-c(1, 21:22, 44:209)) #removing ID column, EDUCATION AND CGRAD COLUMNS, and D_Columns
+
+confounder_names <- colnames(YHdatNA_NAMES)
+confounder_names
+```
+
+#Plotting Data
+```{r}
+#plotting counts of cGrad by region
+pcgradreg <- ggplot(data = YHdatNA, aes(x = as.factor(CGRAD), fill = REGION)) + 
+    geom_bar() +
+    labs(title = "No. College Grads and Non-Grads by Region",  # Adding title
+       x = "College Graduate",  # X-axis label
+       y = "Count") +
+  geom_text(stat = 'count', aes(label = ..count..), position = position_stack(vjust = 0.5)) 
+pcgradreg
+
+```
+
+
+```{r}
+pcgradwant_kids <- ggplot(data = YHdatNA, aes(x = as.factor(CGRAD), fill = D_WANTKIDS_YES)) +
+    geom_bar() +
+      labs(title = "Non-C. Grads and C .Grads w/ 'Does Not Want Kids' Preference in Partner",  # Adding title
+       x = "College Graduate",  # X-axis label
+       y = "Count") +
+  geom_text(stat = 'count', aes(label = ..count..), position = position_stack(vjust = 0.5)) 
+pcgradwant_kids
+
+#ggsave("pcgradwant_kids.png", pcgradwant_kids, width = 6, height = 4, dpi = 300)
+#dev.off()
+```
+
+```{r}
+pcgradsex <- ggplot(data = YHdatNA, aes(x = as.factor(CGRAD), fill = SEX)) +
+    geom_bar() +
+      labs(title = "No. College Grads and Non-Grads by Sex",  # Adding title
+       x = "College Graduate",  # X-axis label
+       y = "Count") +
+  geom_text(stat = 'count', aes(label = ..count..), position = position_stack(vjust = 0.5)) 
+
+pcgradsex
+```
+ 
+
+```{r}
+pcgradwant_kids_region <- ggplot(data = YHdatNA, aes(x = as.factor(CGRAD), fill = D_WANTKIDS_YES)) +
+    geom_bar() +
+  facet_wrap(~ REGION) +
+      labs(title = "Non-C.Grads/C.Grads w. 'Does Not Want Kids' Preference in Partner by Region",  # Adding title
+       x = "College Graduate",  # X-axis label
+       y = "Count") +
+  geom_text(stat = 'count', aes(label = ..count..), position = position_stack(vjust = 0.5)) 
+pcgradwant_kids_region
+
+
+```
+
+
+
+
+#### Step 2: Look at original balance and overlap
+
+
+#PROBIT MODELS
+
+```{r}
+bal_ov_B4_prob_ATC <- matchit(CGRAD ~ SEX + REGION + AGE + ETHNICITY + MARSTAT + BODY + HEIGHT_FT + HEIGHT_IN + SMOKING + DRINKING + LIVE_ALONE + LIVE_KIDS + LIVE_PAR + LIVE_PETS + LIVE_ROOM + LIVE_FAM + LIVE_PARTY + HAVEKIDS + WANTKIDS + EMPSTAT + OCCUP + INCOME + RELIGION + SERVICES + POLITICS + LANG_ENGLISH + LANG_FRENCH + LANG_GERMAN + LANG_ITALIAN + LANG_SPANISH + LANG_PORTUGUESE + LANG_DUTCH + LANG_CHINESE + LANG_JAPANESE + LANG_ARABIC + LANG_RUSSIAN + LANG_HEBREW + LANG_HINDI + LANG_TAGALOG + LANG_URDU, data = YHdatNA,
+                 method = NULL, distance = "glm", link = "probit", estimand = "ATC")
+
+bal_ov_B4_prob_ATC
+sum_bal4_ATC <- summary(bal_ov_B4_prob_ATC)
+
+summarydf_sum_bal4_ATC <- cbind(
+  "Means Treated B4" = sum_bal4_ATC$sum.all[,"Means Treated"],
+  "Means Treated M" = sum_bal4_ATC$sum.matched[,"Means Treated"],
+  "Means Control B4" = sum_bal4_ATC$sum.all[,"Means Control"],
+  "Means Control M" = sum_bal4_ATC$sum.matched[,"Means Control"],
+  "Std. Mean Diff. B4" = sum_bal4_ATC$sum.all[,"Std. Mean Diff."],
+  "Std. Mean Diff. M" = sum_bal4_ATC$sum.matched[,"Std. Mean Diff."],
+  "Var. Ratio B4" = sum_bal4_ATC$sum.all[,"Var. Ratio"],
+  "Var. Ratio M" = sum_bal4_ATC$sum.matched[,"Var. Ratio"],
+  "eCDF Mean B4" = sum_bal4_ATC$sum.all[,"eCDF Mean"],
+  "eCDF Mean M" = sum_bal4_ATC$sum.matched[,"eCDF Mean"],
+  "eCDF Max B4" = sum_bal4_ATC$sum.all[,"eCDF Max"],
+  "eCDF Max M" = sum_bal4_ATC$sum.matched[,"eCDF Max"],
+  "Std. Pair Dist. B4" = sum_bal4_ATC$sum.all[,"Std. Pair Dist."],
+  "Std. Pair Dist. M" = sum_bal4_ATC$sum.matched[,"Std. Pair Dist."]
+) 
+
+summarydf_sum_bal4_ATC <- as.data.frame(summarydf_sum_bal4_ATC)
+
+view(summarydf_sum_bal4_ATC)
+
+summarynn_sum_bal4_ATC <- sum_bal4_ATC$nn
+summarynn_sum_bal4_ATC
+
+bal.plot(bal_ov_B4_prob_ATC, type = "histogram") #plot looks pretty good
+
+
+stdm_summarydf_sum_bal4_ATC <- summarydf_sum_bal4_ATC[order(-abs(summarydf_sum_bal4_ATC$"Std. Mean Diff. B4")), ] #sorting it so its in descending order (largest std to smallest)
+table1 <- round(head(stdm_summarydf_sum_bal4_ATC, n= 7), digits = 4)
+write.csv(table1, "table1.csv", row.names = T)
+
+kableExtra::kable(stdm_summarydf_sum_bal4_ATC)
+```
+
+#### Step 3: Create a propensity model and assess balance and overlap - NEW (to get absolute mean difference. We eant to use eCDF Mean
+ 
+```{r}
+mat_nearest_ATC_wr <- matchit(CGRAD ~ SEX + REGION + AGE + ETHNICITY + MARSTAT + BODY + HEIGHT_FT + HEIGHT_IN + SMOKING + DRINKING + LIVE_ALONE + LIVE_KIDS + LIVE_PAR + LIVE_PETS + LIVE_ROOM + LIVE_FAM + LIVE_PARTY + HAVEKIDS + WANTKIDS + EMPSTAT + OCCUP + INCOME + RELIGION + SERVICES + POLITICS + LANG_ENGLISH + LANG_FRENCH + LANG_GERMAN + LANG_ITALIAN + LANG_SPANISH + LANG_PORTUGUESE + LANG_DUTCH + LANG_CHINESE + LANG_JAPANESE + LANG_ARABIC + LANG_RUSSIAN + LANG_HEBREW + LANG_HINDI + LANG_TAGALOG + LANG_URDU, data = YHdatNA, method = "nearest", estimand = "ATC", distance = "glm", link = "probit", replace = T) 
+                        
+
+mat_nearest_ATC_wr
+options(max.print=3000)
+sum_MatwrATC <- summary(mat_nearest_ATC_wr)
+#sum_fullATE
+
+summarydf_sum_MatwrATC <- cbind(
+  "Means Treated B4" = sum_MatwrATC$sum.all[,"Means Treated"],
+  "Means Treated M" = sum_MatwrATC$sum.matched[,"Means Treated"],
+  "Means Control B4" = sum_MatwrATC$sum.all[,"Means Control"],
+  "Means Control M" = sum_MatwrATC$sum.matched[,"Means Control"],
+  "Std. Mean Diff. B4" = sum_MatwrATC$sum.all[,"Std. Mean Diff."],
+  "Std. Mean Diff. M" = sum_MatwrATC$sum.matched[,"Std. Mean Diff."],
+  "Var. Ratio B4" = sum_MatwrATC$sum.all[,"Var. Ratio"],
+  "Var. Ratio M" = sum_MatwrATC$sum.matched[,"Var. Ratio"],
+  "eCDF Mean B4" = sum_MatwrATC$sum.all[,"eCDF Mean"],
+  "eCDF Mean M" = sum_MatwrATC$sum.matched[,"eCDF Mean"],
+  "eCDF Max B4" = sum_MatwrATC$sum.all[,"eCDF Max"],
+  "eCDF Max M" = sum_MatwrATC$sum.matched[,"eCDF Max"],
+  "Std. Pair Dist. B4" = sum_MatwrATC$sum.all[,"Std. Pair Dist."],
+  "Std. Pair Dist. M" = sum_MatwrATC$sum.matched[,"Std. Pair Dist."]
+)
+
+summarydf_sum_MatwrATC <- as.data.frame(summarydf_sum_MatwrATC)
+
+view(summarydf_sum_MatwrATC) 
+
+summarynn_sum_MatwrATC <- sum_MatwrATC$nn
+summarynn_sum_MatwrATC
+
+
+bal.plot(mat_nearest_ATC_wr, type = "histogram") 
+
+stdm_sum_MatwrATC <- summarydf_sum_MatwrATC[order(-abs(summarydf_sum_MatwrATC$"eCDF Mean M")), ] #sorting it so its in descending order (largest absolute mean difference to smallest)
+
+stdm_sum_MatwrATC$actualdiff <- stdm_sum_MatwrATC$`Means Control M` - stdm_sum_MatwrATC$`Means Treated M`
+
+#check that the actual difference is equal to eCDF Mean M
+stdm_sum_MatwrATC$actualdiff <- abs(stdm_sum_MatwrATC$`Means Control M` - stdm_sum_MatwrATC$`Means Treated M`)
+
+#check and see which variables where they don't match
+view(stdm_sum_MatwrATC %>% filter(`eCDF Mean M` != actualdiff))
+#they are continuous variables and their standard differences are under 0.10
+
+
+ #sorting it so its in descending order (largest absval to smallest)
+table2 <- round(head(stdm_sum_MatwrATC, n= 7), digits = 4)
+setwd("~/R")
+write.csv(table2, "table2.csv", row.names = T)
+
+
+#sort covariates by absolute value of mean difference
+#stdm_sum_MatwrATC <- stdm_sum_MatwrATC %>% relocate("eCDF Mean M", .before = "Means Treated B4") #moving std means column closer
+
+kableExtra::kable(stdm_sum_MatwrATC)
+```
+
+#### Step 3: Create a propensity model and assess balance and overlap
+
+```{r}
+# 
+# 
+# mat_nearest_ATC_wr <- matchit(CGRAD ~ SEX + REGION + AGE + ETHNICITY + MARSTAT + BODY + HEIGHT_FT + HEIGHT_IN + SMOKING + DRINKING + LIVE_ALONE + LIVE_KIDS + LIVE_PAR + LIVE_PETS + LIVE_ROOM + LIVE_FAM + LIVE_PARTY + HAVEKIDS + WANTKIDS + EMPSTAT + OCCUP + INCOME + RELIGION + SERVICES + POLITICS + LANG_ENGLISH + LANG_FRENCH + LANG_GERMAN + LANG_ITALIAN + LANG_SPANISH + LANG_PORTUGUESE + LANG_DUTCH + LANG_CHINESE + LANG_JAPANESE + LANG_ARABIC + LANG_RUSSIAN + LANG_HEBREW + LANG_HINDI + LANG_TAGALOG + LANG_URDU, data = YHdatNA, method = "nearest", estimand = "ATC", distance = "glm", link = "probit", replace = T) 
+#                         
+# 
+# mat_nearest_ATC_wr
+# options(max.print=3000)
+# sum_MatwrATC <- summary(mat_nearest_ATC_wr)
+# #sum_fullATE
+# 
+# summarydf_sum_MatwrATC <- cbind(
+#   "Means Treated B4" = sum_MatwrATC$sum.all[,"Means Treated"],
+#   "Means Treated M" = sum_MatwrATC$sum.matched[,"Means Treated"],
+#   "Means Control B4" = sum_MatwrATC$sum.all[,"Means Control"],
+#   "Means Control M" = sum_MatwrATC$sum.matched[,"Means Control"],
+#   "Std. Mean Diff. B4" = sum_MatwrATC$sum.all[,"Std. Mean Diff."],
+#   "Std. Mean Diff. M" = sum_MatwrATC$sum.matched[,"Std. Mean Diff."],
+#   "Var. Ratio B4" = sum_MatwrATC$sum.all[,"Var. Ratio"],
+#   "Var. Ratio M" = sum_MatwrATC$sum.matched[,"Var. Ratio"],
+#   "eCDF Mean B4" = sum_MatwrATC$sum.all[,"eCDF Mean"],
+#   "eCDF Mean M" = sum_MatwrATC$sum.matched[,"eCDF Mean"],
+#   "eCDF Max B4" = sum_MatwrATC$sum.all[,"eCDF Max"],
+#   "eCDF Max M" = sum_MatwrATC$sum.matched[,"eCDF Max"],
+#   "Std. Pair Dist. B4" = sum_MatwrATC$sum.all[,"Std. Pair Dist."],
+#   "Std. Pair Dist. M" = sum_MatwrATC$sum.matched[,"Std. Pair Dist."]
+# )
+# 
+# summarydf_sum_MatwrATC <- as.data.frame(summarydf_sum_MatwrATC)
+# 
+# view(summarydf_sum_MatwrATC) 
+# 
+# summarynn_sum_MatwrATC <- sum_MatwrATC$nn
+# summarynn_sum_MatwrATC
+# 
+# 
+# bal.plot(mat_nearest_ATC_wr, type = "histogram") 
+# 
+# stdm_sum_MatwrATC <- summarydf_sum_MatwrATC[order(-abs(summarydf_sum_MatwrATC$"Std. Mean Diff. M")), ] #sorting it so its in descending order (largest std to smallest)
+# 
+#  #sorting it so its in descending order (largest std to smallest)
+# table2 <- round(head(stdm_sum_MatwrATC, n= 7), digits = 4)
+# setwd("~/R")
+# write.csv(table2, "table2.csv", row.names = T)
+# 
+# 
+# #sort covariates by absolute value of standarzied mean difference
+# stdm_sum_MatwrATC <- stdm_sum_MatwrATC %>% relocate("Std. Mean Diff. M", .before = "Means Treated B4") #moving std means column closer
+# 
+# stdm_sum_MatwrATC
+
+```
+
+#### Step 4: Edit Propensity Score model to create better balance
+
+```{r}
+#Final Model
+#just interaction between Havekids and wantkids
+
+mat_nearest_ATC_wr4 <- matchit(CGRAD ~ SEX + REGION + AGE + ETHNICITY + MARSTAT + BODY + HEIGHT_FT + HEIGHT_IN + SMOKING + DRINKING + LIVE_ALONE + LIVE_KIDS + LIVE_PAR + LIVE_PETS + LIVE_ROOM + LIVE_FAM + LIVE_PARTY + HAVEKIDS*WANTKIDS + EMPSTAT + OCCUP + INCOME + RELIGION + SERVICES + POLITICS + LANG_ENGLISH + LANG_FRENCH + LANG_GERMAN + LANG_ITALIAN + LANG_SPANISH + LANG_PORTUGUESE + LANG_DUTCH + LANG_CHINESE + LANG_JAPANESE + LANG_ARABIC + LANG_RUSSIAN + LANG_HEBREW + LANG_HINDI + LANG_TAGALOG + LANG_URDU, data = YHdatNA,
+                 method = "nearest", estimand = "ATC", distance = "glm", link = "probit", replace = T) 
+
+mat_nearest_ATC_wr4
+options(max.print=3000)
+sum_MatwrATC4 <- summary(mat_nearest_ATC_wr4)
+#sum_MatwrATC4
+
+
+summarydf_sum_MatwrATC4 <- cbind(
+  "Means Treated B4" = sum_MatwrATC4$sum.all[,"Means Treated"],
+  "Means Treated M" = sum_MatwrATC4$sum.matched[,"Means Treated"],
+  "Means Control B4" = sum_MatwrATC4$sum.all[,"Means Control"],
+  "Means Control M" = sum_MatwrATC4$sum.matched[,"Means Control"],
+  "Std. Mean Diff. B4" = sum_MatwrATC4$sum.all[,"Std. Mean Diff."],
+  "Std. Mean Diff. M" = sum_MatwrATC4$sum.matched[,"Std. Mean Diff."],
+  "Var. Ratio B4" = sum_MatwrATC4$sum.all[,"Var. Ratio"],
+  "Var. Ratio M" = sum_MatwrATC4$sum.matched[,"Var. Ratio"],
+  "eCDF Mean B4" = sum_MatwrATC4$sum.all[,"eCDF Mean"],
+  "eCDF Mean M" = sum_MatwrATC4$sum.matched[,"eCDF Mean"],
+  "eCDF Max B4" = sum_MatwrATC4$sum.all[,"eCDF Max"],
+  "eCDF Max M" = sum_MatwrATC4$sum.matched[,"eCDF Max"],
+  "Std. Pair Dist. B4" = sum_MatwrATC4$sum.all[,"Std. Pair Dist."],
+  "Std. Pair Dist. M" = sum_MatwrATC4$sum.matched[,"Std. Pair Dist."]
+) 
+
+summarydf_sum_MatwrATC4 <- as.data.frame(summarydf_sum_MatwrATC4)
+
+view(summarydf_sum_MatwrATC4)
+
+summarynn_sum_MatwrATC4 <- sum_MatwrATC4$nn
+summarynn_sum_MatwrATC4
+
+bal.plot(mat_nearest_ATC_wr4, type = "histogram") 
+
+
+#sort covariates by absolute value mean difference
+
+stdm_sum_MatwrATC4 <- summarydf_sum_MatwrATC4[order(-abs(summarydf_sum_MatwrATC4$"eCDF Mean M")), ] #sorting it so its in descending order (largest std to smallest)
+
+# table3 <- round(head(stdm_sum_MatwrATC4, n= 7), digits = 4)
+# setwd("~/R")
+# write.csv(table3, "table3.csv", row.names = T)
+
+stdm_sum_MatwrATC4 <- stdm_sum_MatwrATC4 %>% relocate("eCDF Mean M", .before = "Means Treated B4") #moving std means column closer
+stdm_sum_MatwrATC4
+
+```
+
+
+#### Step 5: Estimate Treatment Effects
+
+```{r}
+#get the weights of all the observations
+weights_ATC_wr4 <- as.vector(mat_nearest_ATC_wr4$weights)
+
+YHdatNA$D_WANTKIDS_NO_v2 <- ifelse(YHdatNA$D_WANTKIDS_NO == "(1) yes", 1, 0) #yes, they want't to date someone who doesn't want kids
+
+
+#Warning: non-integer #successes in a binomial glm!
+Mat_Mod_ATC_wr4_log <- glm(D_WANTKIDS_NO_v2  ~ as.factor(CGRAD) + REGION + as.factor(SEX) + AGE +  ETHNICITY + MARSTAT + BODY + HEIGHT_FT + HEIGHT_IN + SMOKING + DRINKING + LIVE_ALONE + LIVE_KIDS + LIVE_PAR + LIVE_PETS + LIVE_ROOM + LIVE_FAM + LIVE_PARTY + HAVEKIDS + WANTKIDS + EMPSTAT + OCCUP + INCOME + RELIGION + SERVICES + POLITICS + LANG_ENGLISH + LANG_FRENCH + LANG_GERMAN + LANG_ITALIAN + LANG_SPANISH + LANG_PORTUGUESE + LANG_DUTCH + LANG_CHINESE + LANG_JAPANESE + LANG_ARABIC + LANG_RUSSIAN + LANG_HEBREW + LANG_HINDI + LANG_TAGALOG + LANG_URDU, data = YHdatNA, weights = weights_ATC_wr4, family = binomial("logit"))
+
+
+options(max.print=50)
+Mat_Mod_ATC_wr_summary <- summary(Mat_Mod_ATC_wr4_log)
+
+sink("lm.txt")
+print(Mat_Mod_ATC_wr_summary) 
+sink()
+
+
+point_estimate_matchATC_wr4_log <- (coeftest(Mat_Mod_ATC_wr4_log, vcov = sandwich)[2,1])
+point_estimate_matchATC_wr4_log
+
+probcoef <- point_estimate_matchATC_wr4_log/4
+probcoef
+
+point_SE_matchATC_wr4_log <- (coeftest(Mat_Mod_ATC_wr4_log, vcov = sandwich)[2,2])
+point_SE_matchATC_wr4_log
+
+```
+
+```{r}
+#linear regression for final compare
+
+Mat_Mod_ATC_wr4_lm_vanilla <- lm(D_WANTKIDS_NO_v2 ~ as.factor(CGRAD) + REGION + as.factor(SEX) + AGE +  ETHNICITY + MARSTAT + BODY + HEIGHT_FT + HEIGHT_IN + SMOKING + DRINKING + LIVE_ALONE + LIVE_KIDS + LIVE_PAR + LIVE_PETS + LIVE_ROOM + LIVE_FAM + LIVE_PARTY + HAVEKIDS + WANTKIDS + EMPSTAT + OCCUP + INCOME + RELIGION + SERVICES + POLITICS + LANG_ENGLISH + LANG_FRENCH + LANG_GERMAN + LANG_ITALIAN + LANG_SPANISH + LANG_PORTUGUESE + LANG_DUTCH + LANG_CHINESE + LANG_JAPANESE + LANG_ARABIC + LANG_RUSSIAN + LANG_HEBREW + LANG_HINDI + LANG_TAGALOG + LANG_URDU, data = YHdatNA)
+
+options(max.print=50)
+Mat_Mod_ATC_wr4_lm_vanilla_summary <- summary(Mat_Mod_ATC_wr4_lm_vanilla)
+Mat_Mod_ATC_wr4_lm_vanilla_summary
+
+sink("lm_van.txt")
+print(Mat_Mod_ATC_wr4_lm_vanilla_summary)
+sink()
+
+point_estimate_matchATC_wr4_lm_van<- (coeftest(Mat_Mod_ATC_wr4_lm_vanilla, vcov = sandwich)[2,1])
+point_estimate_matchATC_wr4_lm_van
+
+point_SE_matchATC_wr4_lm_van <- (coeftest(Mat_Mod_ATC_wr4_lm_vanilla, vcov = sandwich)[2,2])
+point_SE_matchATC_wr4_lm_van
+
+
+
+```
+
